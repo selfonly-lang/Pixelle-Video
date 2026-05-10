@@ -52,9 +52,15 @@ def main():
         title="History",
         icon="📚"
     )
-    
+
+    beauty_bot_page = st.Page(
+        "pages/3_💄_BeautyBot.py",
+        title="BeautyBot 醫美機器人",
+        icon="💄"
+    )
+
     # Set up navigation and run
-    pg = st.navigation([home_page, history_page])
+    pg = st.navigation([home_page, history_page, beauty_bot_page])
     pg.run()
 
 
