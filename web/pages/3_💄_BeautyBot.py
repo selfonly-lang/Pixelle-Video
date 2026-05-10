@@ -35,6 +35,16 @@ from web.pipelines.beauty_bot import (
     WEEKLY_SCHEDULE,
     CTA_TEMPLATES,
 )
+from web.pipelines.threads_publisher import (
+    ThreadsPublisher,
+    ThreadsCredentials,
+    load_credentials,
+    save_credentials,
+    clear_credentials,
+    load_post_history,
+    count_posts_today,
+    DAILY_POST_LIMIT,
+)
 
 st.set_page_config(
     page_title="BeautyBot 醫美發文機器人 - Pixelle",
@@ -106,6 +116,48 @@ def get_bot(pixelle_video) -> BeautyBotPipeline:
     return st.session_state.beauty_bot
 
 
+def get_publisher() -> ThreadsPublisher:
+    """取得（或重建）ThreadsPublisher 實例"""
+    creds = load_credentials()
+    return ThreadsPublisher(creds)
+
+
+def threads_connected() -> bool:
+    """快速判斷是否已設定 Threads 憑證"""
+    return load_credentials().is_valid
+
+
+def render_publish_button(post: dict, key_suffix: str):
+    """在貼文卡片底部渲染「直接發文到 Threads」按鈕"""
+    bot = st.session_state.get("beauty_bot")
+    if not bot:
+        return
+
+    connected = threads_connected()
+    today_count = count_posts_today()
+    remaining = DAILY_POST_LIMIT - today_count
+
+    col_btn, col_stat = st.columns([2, 1])
+    with col_stat:
+        if connected:
+            st.caption(f"📊 今日已發 {today_count} 篇 · 剩餘 {remaining} 篇")
+        else:
+            st.caption("⚠️ 尚未連接 Threads")
+
+    with col_btn:
+        disabled = not connected or remaining <= 0
+        label = "🚀 直接發文到 Threads" if connected else "🔗 請先設定 Threads 帳號"
+        if st.button(label, key=f"publish_{key_suffix}", disabled=disabled, use_container_width=True):
+            publisher = get_publisher()
+            with st.spinner("發文中... ⏳"):
+                result = publisher.publish_post_dict(post, bot.format_post_for_display)
+            if result.success:
+                st.success(f"✅ 發文成功！貼文 ID：`{result.post_id}`")
+                st.markdown(f"[🔗 查看貼文]({result.url})", unsafe_allow_html=False)
+            else:
+                st.error(f"❌ 發文失敗：{result.error}")
+
+
 def render_post_card(post: dict, index: int = 0, show_copy: bool = True):
     """渲染單篇貼文卡片"""
     bot = st.session_state.get("beauty_bot")
@@ -153,7 +205,7 @@ def render_post_card(post: dict, index: int = 0, show_copy: bool = True):
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # 複製按鈕
+        # 複製全文 + 直接發文
         if show_copy and bot:
             full_text = bot.format_post_for_display(post)
             st.text_area(
@@ -162,6 +214,9 @@ def render_post_card(post: dict, index: int = 0, show_copy: bool = True):
                 height=200,
                 key=f"copy_post_{index}_{id(post)}",
             )
+
+        # 直接發文到 Threads
+        render_publish_button(post, key_suffix=f"{index}_{id(post)}")
 
 
 # ─────────────────────────────────────────────
@@ -405,6 +460,112 @@ def tab_strategy(pixelle_video):
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
+def tab_threads(pixelle_video):
+    """Threads 帳號串接與發文歷史"""
+    st.subheader("🔗 Threads 帳號串接")
+
+    creds = load_credentials()
+
+    # ── 連線狀態 ────────────────────────────────
+    if creds.is_valid:
+        today_count = count_posts_today()
+        remaining = DAILY_POST_LIMIT - today_count
+        conn_col1, conn_col2, conn_col3 = st.columns(3)
+        with conn_col1:
+            st.metric("帳號", f"@{creds.username}" if creds.username else creds.user_id)
+        with conn_col2:
+            st.metric("今日已發", f"{today_count} 篇")
+        with conn_col3:
+            st.metric("今日剩餘", f"{remaining} 篇")
+        st.success("✅ Threads 帳號已連接，可直接發文！")
+    else:
+        st.warning("⚠️ 尚未連接 Threads 帳號。請依照下方步驟取得 Access Token 後輸入。")
+
+    st.divider()
+
+    # ── 設定表單 ────────────────────────────────
+    with st.expander("🔑 設定 Threads Access Token", expanded=not creds.is_valid):
+        st.markdown("""
+**如何取得 Threads Access Token？**
+
+1. 前往 [Meta for Developers](https://developers.facebook.com/) 建立 App
+2. 新增 **Threads API** 產品
+3. 在 Threads API → Graph API Explorer 產生 **User Access Token**
+   - 需勾選權限：`threads_basic`、`threads_content_publish`
+4. 建議使用 [長期 Token 工具](https://developers.facebook.com/tools/explorer/) 延長至 60 天
+5. 複製 Token 貼入下方
+""")
+
+        with st.form("threads_creds_form"):
+            new_token = st.text_input(
+                "Access Token",
+                value=creds.access_token,
+                type="password",
+                placeholder="貼入你的 Threads Access Token...",
+            )
+            submitted = st.form_submit_button("💾 儲存並驗證", type="primary", use_container_width=True)
+
+        if submitted and new_token.strip():
+            test_creds = ThreadsCredentials(access_token=new_token.strip())
+            publisher = ThreadsPublisher(test_creds)
+            with st.spinner("驗證 Token 中..."):
+                result = publisher.verify_token()
+            if result["ok"]:
+                test_creds.user_id = result["user_id"]
+                test_creds.username = result["username"]
+                save_credentials(test_creds)
+                st.success(f"✅ 驗證成功！帳號：@{result['username']} (ID: {result['user_id']})")
+                st.rerun()
+            else:
+                st.error(f"❌ 驗證失敗：{result['error']}")
+
+        if creds.is_valid:
+            if st.button("🗑️ 清除憑證", use_container_width=True):
+                clear_credentials()
+                st.rerun()
+
+    st.divider()
+
+    # ── 快速測試發文 ─────────────────────────────
+    if creds.is_valid:
+        with st.expander("🧪 測試發文", expanded=False):
+            st.caption("發一則測試貼文確認串接正常（會真實發出到你的 Threads 帳號）")
+            test_text = st.text_area(
+                "測試貼文內容",
+                value="🌸 BeautyBot 測試發文 — 醫美資訊自動化上線！\n\n更多醫美資訊 👉 https://self.com.tw",
+                height=100,
+            )
+            if st.button("📤 發送測試貼文", type="secondary"):
+                publisher = get_publisher()
+                with st.spinner("發文中..."):
+                    result = publisher.publish_text(test_text)
+                if result.success:
+                    st.success(f"✅ 測試成功！貼文 ID：`{result.post_id}`")
+                    st.markdown(f"[🔗 查看貼文]({result.url})")
+                else:
+                    st.error(f"❌ 失敗：{result.error}")
+
+    st.divider()
+
+    # ── 發文歷史 ─────────────────────────────────
+    st.markdown("#### 📋 發文歷史（最近 20 筆）")
+    history = load_post_history()
+    if not history:
+        st.info("尚無發文記錄")
+    else:
+        import pandas as pd
+        rows = []
+        for h in history[:20]:
+            rows.append({
+                "時間": h.published_at[:16].replace("T", " "),
+                "標題": h.title[:30],
+                "主題": h.topic,
+                "狀態": "✅ 成功" if h.success else f"❌ {h.error[:20]}",
+                "貼文 ID": h.post_id or "-",
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
 def tab_settings(pixelle_video):
     """機器人設定"""
     st.subheader("⚙️ 機器人設定")
@@ -435,25 +596,27 @@ def tab_settings(pixelle_video):
             """
 ### 如何使用 BeautyBot？
 
-1. **快速生成** — 選主題 → 點生成 → 複製貼至 Threads
-2. **週計畫** — 一次生成 7 篇，批量備稿省時省力
+1. **快速生成** — 選主題 → 點生成 → 複製或直接發文到 Threads
+2. **週計畫** — 一次生成 7 篇，批量備稿或逐篇發布
 3. **系列貼文** — 深耕單一主題，建立帳號定位
 4. **策略指南** — 學習增粉技巧和導流方法
+5. **Threads 串接** — 設定 Access Token 後可一鍵直接發文
 
-### 最佳使用流程
+### 直接發文流程
 
 ```
-每週日 → 生成下週 7 篇 → 排程至緩衝工具（Buffer/Later）
-           ↓
-每天發布 → 前 30 分鐘積極互動 → 導流到 self.com.tw
-           ↓
-每週統計互動率 → 調整效果最好的主題比例
+設定 → 輸入 Threads Access Token → 驗證成功
+  ↓
+快速生成 → AI 生成貼文 → 點「直接發文到 Threads」
+  ↓
+Threads 帳號自動發出貼文 ✅
 ```
 
 ### 注意事項
 - 生成的內容僅供參考，請根據實際情況調整
 - 醫療資訊請務必由專業醫師確認後再發布
-- 保持帳號真實性，避免過度廣告化
+- Threads Access Token 儲存在本機，不會上傳至任何伺服器
+- Threads 每 24 小時最多發 250 篇
 """
         )
 
@@ -479,6 +642,17 @@ def main():
         unsafe_allow_html=True,
     )
 
+    # Threads 連線狀態橫幅
+    if threads_connected():
+        creds = load_credentials()
+        today_count = count_posts_today()
+        st.success(
+            f"🔗 Threads 已連線 @{creds.username or creds.user_id} · "
+            f"今日已發 {today_count}/{DAILY_POST_LIMIT} 篇",
+        )
+    else:
+        st.info("💡 尚未連接 Threads 帳號，前往「🔗 Threads 串接」分頁完成設定後即可直接發文。")
+
     # 今日主題提示
     from web.pipelines.beauty_bot import BeautyBotPipeline, WEEKLY_SCHEDULE
     today_weekday = datetime.now().weekday()
@@ -499,8 +673,8 @@ def main():
     pixelle_video = get_pixelle_video()
 
     # 分頁
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["🖊️ 快速生成", "📅 週計畫", "🎯 系列貼文", "📈 增粉策略", "⚙️ 設定"]
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        ["🖊️ 快速生成", "📅 週計畫", "🎯 系列貼文", "📈 增粉策略", "🔗 Threads 串接", "⚙️ 設定"]
     )
 
     with tab1:
@@ -512,6 +686,8 @@ def main():
     with tab4:
         tab_strategy(pixelle_video)
     with tab5:
+        tab_threads(pixelle_video)
+    with tab6:
         tab_settings(pixelle_video)
 
     # Footer
