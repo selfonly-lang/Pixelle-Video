@@ -38,9 +38,14 @@ from web.pipelines.beauty_bot import (
 from web.pipelines.threads_publisher import (
     ThreadsPublisher,
     ThreadsCredentials,
+    ThreadsAppCredentials,
     load_credentials,
     save_credentials,
     clear_credentials,
+    load_app_credentials,
+    save_app_credentials,
+    generate_oauth_url,
+    full_oauth_exchange,
     load_post_history,
     count_posts_today,
     DAILY_POST_LIMIT,
@@ -465,68 +470,127 @@ def tab_threads(pixelle_video):
     st.subheader("🔗 Threads 帳號串接")
 
     creds = load_credentials()
+    app_creds = load_app_credentials()
 
-    # ── 連線狀態 ────────────────────────────────
+    # ── 連線狀態橫幅 ─────────────────────────────
     if creds.is_valid:
         today_count = count_posts_today()
         remaining = DAILY_POST_LIMIT - today_count
-        conn_col1, conn_col2, conn_col3 = st.columns(3)
-        with conn_col1:
-            st.metric("帳號", f"@{creds.username}" if creds.username else creds.user_id)
-        with conn_col2:
-            st.metric("今日已發", f"{today_count} 篇")
-        with conn_col3:
-            st.metric("今日剩餘", f"{remaining} 篇")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("帳號", f"@{creds.username}" if creds.username else creds.user_id[:8] + "…")
+        c2.metric("今日已發", f"{today_count} 篇")
+        c3.metric("今日剩餘", f"{remaining} 篇")
+        expires = creds.token_expires_at[:10] if creds.token_expires_at else "—"
+        c4.metric("Token 到期", expires)
         st.success("✅ Threads 帳號已連接，可直接發文！")
+        if st.button("🗑️ 登出 / 清除憑證"):
+            clear_credentials()
+            st.rerun()
     else:
-        st.warning("⚠️ 尚未連接 Threads 帳號。請依照下方步驟取得 Access Token 後輸入。")
+        st.warning("⚠️ 尚未連接 Threads 帳號。請依照下方步驟完成授權。")
 
     st.divider()
 
-    # ── 設定表單 ────────────────────────────────
-    with st.expander("🔑 設定 Threads Access Token", expanded=not creds.is_valid):
-        st.markdown("""
-**如何取得 Threads Access Token？**
-
-1. 前往 [Meta for Developers](https://developers.facebook.com/) 建立 App
-2. 新增 **Threads API** 產品
-3. 在 Threads API → Graph API Explorer 產生 **User Access Token**
-   - 需勾選權限：`threads_basic`、`threads_content_publish`
-4. 建議使用 [長期 Token 工具](https://developers.facebook.com/tools/explorer/) 延長至 60 天
-5. 複製 Token 貼入下方
-""")
-
-        with st.form("threads_creds_form"):
-            new_token = st.text_input(
-                "Access Token",
-                value=creds.access_token,
-                type="password",
-                placeholder="貼入你的 Threads Access Token...",
+    # ── 步驟 1：App 憑證 ──────────────────────────
+    with st.expander("步驟 1️⃣  設定 Meta App 憑證", expanded=not app_creds.is_valid):
+        st.markdown("輸入你的 Meta App ID 和 App Secret（已自動填入）：")
+        with st.form("app_creds_form"):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                new_app_id = st.text_input("App ID", value=app_creds.app_id or "1854440058813609")
+            with col_b:
+                new_app_secret = st.text_input("App Secret", value=app_creds.app_secret, type="password")
+            new_redirect = st.text_input(
+                "Redirect URI（需在 Meta App 設定中加入）",
+                value=app_creds.redirect_uri or "https://self.com.tw/oauth/callback",
+                help="必須完全符合 Meta Developer Console 中設定的 Redirect URI",
             )
-            submitted = st.form_submit_button("💾 儲存並驗證", type="primary", use_container_width=True)
+            save_app = st.form_submit_button("💾 儲存 App 憑證", type="primary", use_container_width=True)
 
-        if submitted and new_token.strip():
-            test_creds = ThreadsCredentials(access_token=new_token.strip())
-            publisher = ThreadsPublisher(test_creds)
-            with st.spinner("驗證 Token 中..."):
-                result = publisher.verify_token()
-            if result["ok"]:
-                test_creds.user_id = result["user_id"]
-                test_creds.username = result["username"]
-                save_credentials(test_creds)
-                st.success(f"✅ 驗證成功！帳號：@{result['username']} (ID: {result['user_id']})")
-                st.rerun()
-            else:
-                st.error(f"❌ 驗證失敗：{result['error']}")
+        if save_app:
+            new_app = ThreadsAppCredentials(
+                app_id=new_app_id.strip(),
+                app_secret=new_app_secret.strip(),
+                redirect_uri=new_redirect.strip(),
+            )
+            save_app_credentials(new_app)
+            app_creds = new_app
+            st.success("✅ App 憑證已儲存！")
+            st.rerun()
 
-        if creds.is_valid:
-            if st.button("🗑️ 清除憑證", use_container_width=True):
-                clear_credentials()
-                st.rerun()
+    # ── 步驟 2：產生授權連結 ──────────────────────
+    with st.expander("步驟 2️⃣  授權你的 Threads 帳號", expanded=app_creds.is_valid and not creds.is_valid):
+        if not app_creds.is_valid:
+            st.info("請先完成步驟 1 設定 App 憑證")
+        else:
+            try:
+                oauth_url = generate_oauth_url(app_creds)
+                st.markdown("點擊下方連結，在瀏覽器中授權你的 Threads 帳號：")
+                st.markdown(
+                    f'<a href="{oauth_url}" target="_blank" style="'
+                    'display:inline-block;background:#7b1fa2;color:white;'
+                    'padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">'
+                    '🔗 點此授權 Threads 帳號</a>',
+                    unsafe_allow_html=True,
+                )
+                st.code(oauth_url, language=None)
+                st.caption(
+                    "授權後你會被重新導向到 Redirect URI（網址會包含 `?code=...`），"
+                    "複製整個網址或只複製 code 的值，貼到步驟 3。"
+                )
+
+                st.markdown("**⚠️ Meta App 設定提醒**")
+                st.markdown(
+                    f"請確認在 [Meta Developer Console](https://developers.facebook.com/apps/{app_creds.app_id}/settings/basic/) "
+                    f"的「Threads API → User Token Generator」已加入："
+                )
+                st.code(app_creds.redirect_uri)
+            except ValueError as e:
+                st.error(str(e))
+
+    # ── 步驟 3：貼入 code 換取 Token ──────────────
+    with st.expander("步驟 3️⃣  貼入授權 Code 取得 Token", expanded=app_creds.is_valid and not creds.is_valid):
+        if not app_creds.is_valid:
+            st.info("請先完成步驟 1 設定 App 憑證")
+        else:
+            st.markdown("將授權後網址（或 code 值）貼入下方：")
+            code_input = st.text_input(
+                "授權 Code 或完整 Redirect URL",
+                placeholder="例：AQD...abc  或  https://self.com.tw/oauth/callback?code=AQD...abc",
+            )
+            if st.button("🔄 換取 Access Token", type="primary", disabled=not code_input.strip()):
+                with st.spinner("換取並驗證 Token 中（最多 15 秒）..."):
+                    result = full_oauth_exchange(code_input.strip(), app_creds)
+                if result["ok"]:
+                    st.success(
+                        f"✅ 授權成功！帳號：@{result['username']}  |  Token 有效至：{result['expires_at'][:10]}"
+                    )
+                    st.rerun()
+                else:
+                    st.error(f"❌ 授權失敗：{result['error']}")
+
+            st.divider()
+            st.markdown("**或直接貼入 Access Token（如已有長效 Token）**")
+            with st.form("direct_token_form"):
+                direct_token = st.text_input("Access Token", type="password", placeholder="貼入長效 Access Token...")
+                direct_submit = st.form_submit_button("💾 直接儲存並驗證")
+            if direct_submit and direct_token.strip():
+                test_creds = ThreadsCredentials(access_token=direct_token.strip())
+                pub = ThreadsPublisher(test_creds)
+                with st.spinner("驗證 Token 中..."):
+                    vr = pub.verify_token()
+                if vr["ok"]:
+                    test_creds.user_id = vr["user_id"]
+                    test_creds.username = vr["username"]
+                    save_credentials(test_creds)
+                    st.success(f"✅ 驗證成功！帳號：@{vr['username']}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ 驗證失敗：{vr['error']}")
 
     st.divider()
 
-    # ── 快速測試發文 ─────────────────────────────
+    # ── 測試發文 ──────────────────────────────────
     if creds.is_valid:
         with st.expander("🧪 測試發文", expanded=False):
             st.caption("發一則測試貼文確認串接正常（會真實發出到你的 Threads 帳號）")
@@ -547,7 +611,7 @@ def tab_threads(pixelle_video):
 
     st.divider()
 
-    # ── 發文歷史 ─────────────────────────────────
+    # ── 發文歷史 ──────────────────────────────────
     st.markdown("#### 📋 發文歷史（最近 20 筆）")
     history = load_post_history()
     if not history:
