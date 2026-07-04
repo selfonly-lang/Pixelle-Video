@@ -1,0 +1,31 @@
+{
+  "style_prefix": "Premium beauty brand campaign aesthetic, cinematic, soft warm natural light, 35mm film look, beige and cream palette, shallow depth of field, editorial photography, calm and refined, no text, no logos, no watermarks",
+  "negative_prompt": "text, logo, watermark, lowres, distorted face, extra fingers, harsh lighting, oversaturated, plastic skin, surgical photo, before-after, medical equipment closeup",
+  "scenes": [
+    {
+      "id": 1,
+      "narration": "美，從來不是給誰看的。",
+      "prompt": "Soft morning sunlight filtering through sheer linen curtains into a cream-toned minimalist bedroom, an East Asian woman in her early thirties gently waking, eyes softly opening, dewy natural skin, no makeup look, warm golden hour, peaceful and intimate, side profile, medium close-up"
+    },
+    {
+      "id": 2,
+      "narration": "而是你願意，為自己留下的一段時光。",
+      "prompt": "Close-up of an East Asian woman gently pressing skincare onto her cheek in front of a backlit vanity mirror, white porcelain bottles and a small ceramic tray, beige marble counter, warm tungsten lighting, slight steam in the air, contemplative ritual mood"
+    },
+    {
+      "id": 3,
+      "narration": "己美 self，以醫學的專業，守護每一次如儀式般的保養。",
+      "prompt": "Modern minimalist medical aesthetic clinic interior, no people, beige walls and warm wood paneling, indoor olive plant, linen curtains diffusing soft daylight, a single curved cream chair, polished concrete floor, calm spa-like atmosphere, architectural interior photography"
+    },
+    {
+      "id": 4,
+      "narration": "加入會員，擁有專屬諮詢、個人化療程紀錄，與只屬於你的禮遇。",
+      "prompt": "An elegant cream-colored matte membership card resting on a beige marble surface next to a smartphone showing a refined personal care timeline with abstract beige cards and soft typography, dried pampas grass in soft bokeh, warm window light from upper left, premium lifestyle still life"
+    },
+    {
+      "id": 5,
+      "narration": "己美 self，為自己，而美。立即上 self.com.tw 註冊會員。",
+      "prompt": "Confident East Asian woman in her early thirties softly smiling to herself in a soft-lit mirror, wearing a cream silk robe, healthy glowing skin, eyes catching warm light, dignified and serene, half profile, premium beauty brand campaign portrait, natural cinematic light, generous negative space on the right for logo and URL overlay"
+    }
+  ]
+}

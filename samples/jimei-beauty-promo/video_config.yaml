@@ -1,0 +1,55 @@
+# 己美 self — 醫美形象影片 Pixelle-Video 製作設定
+# 用法：將 script.txt 內容貼入 Pixelle-Video Web UI 的「固定腳本 / Fixed Script」欄位，
+# 並依下列建議調整輸出規格與模板。
+
+project: jimei-beauty-promo
+title: 己美 self — 為自己，而美
+language: zh-TW
+duration_seconds: 30
+aspect_ratio: "1080x1920"   # IG Reels / FB Reels 直式
+
+# Pixelle-Video pipeline 建議
+pipeline:
+  mode: standard
+  script_mode: fixed         # 使用 samples/jimei-beauty-promo/script.txt
+  script_file: samples/jimei-beauty-promo/script.txt
+  split_mode: line           # 一行一段（與分鏡一致，共 5 段）
+
+template:
+  default_template: "1080x1920/image_elegant.html"
+
+tts:
+  engine: edge-tts
+  voice: zh-TW-HsiaoChenNeural   # 備選：zh-TW-HsiaoYuNeural
+  rate: "-8%"
+  volume: "+0%"
+  style: gentle
+
+bgm:
+  file: bgm/default.mp3            # 可換成 cinematic minimal piano（80–90 BPM）
+  volume: 0.18                     # 旁白為主，BGM 輕底襯
+  fade_in_seconds: 1.0
+  fade_out_seconds: 2.0
+
+image:
+  default_workflow: runninghub/image_flux.json
+  prompt_prefix: "Premium beauty brand campaign aesthetic, cinematic, soft warm natural light, 35mm film look, beige and cream palette, shallow depth of field, editorial photography, calm and refined, no text, no logos, no watermarks"
+  prompts_file: samples/jimei-beauty-promo/image_prompts.json
+
+video:
+  # 純圖+旁白即可達到形象影片所需質感；若要動態化，可開啟
+  enable_motion: false
+  default_workflow: runninghub/video_wan2.1_fusionx.json
+  prompt_prefix: "subtle gentle camera movement, slow push-in, soft parallax, premium beauty campaign"
+
+overlay:
+  brand_name: "己美 self"
+  url: "己美self.com.tw"
+  cta: "立即註冊會員"
+  show_on_scenes: [5]
+  safe_area_padding_px: 120
+
+compliance_notes:
+  - 純品牌形象，避免具名療程、療效宣稱、術前後對比
+  - 不出現「最」「保證」「永久」等違規字眼
+  - 字幕與旁白須一致，便於審查
