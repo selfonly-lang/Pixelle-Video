@@ -141,6 +141,36 @@ async function logPostHistory(params: {
   }
 }
 
+// ── Signal Brain (brain_signals integration) ─────────────
+
+async function signalBrain(params: {
+  title: string; topic: string; post_id?: string; success: boolean; error?: string;
+}) {
+  try {
+    const db = adminClient();
+    await db.from("brain_signals").insert({
+      source_platform: "beautybot",
+      source_neural: "medmedia_planning",
+      signal_type: params.success ? "content_published" : "task_completed",
+      title: params.success
+        ? `BeautyBot 發文成功：${params.title}`
+        : `BeautyBot 發文失敗：${params.title}`,
+      data: {
+        topic: params.topic,
+        threads_post_id: params.post_id ?? null,
+        success: params.success,
+        error: params.error ?? null,
+        platform: "threads",
+        published_at: new Date().toISOString(),
+      },
+      strength: params.success ? 7 : 3,
+      processed: false,
+    });
+  } catch {
+    // non-fatal — 大腦訊號失敗不影響主流程
+  }
+}
+
 // ── CORS headers ─────────────────────────────────────────
 
 const CORS = {
@@ -245,7 +275,10 @@ Deno.serve(async (req: Request) => {
       if (!cred) return jsonResponse({ success: false, error: "Threads not connected" }, 401);
 
       const result = await publishTextToThreads(text, cred.access_token, cred.user_id);
-      await logPostHistory({ title, topic, post_id: result.post_id, success: result.success, error: result.error });
+      await Promise.all([
+        logPostHistory({ title, topic, post_id: result.post_id, success: result.success, error: result.error }),
+        signalBrain({ title, topic, post_id: result.post_id, success: result.success, error: result.error }),
+      ]);
       return jsonResponse(result);
     }
 

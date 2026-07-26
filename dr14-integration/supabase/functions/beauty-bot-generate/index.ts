@@ -1,11 +1,10 @@
 // Supabase Edge Function: beauty-bot-generate
-// AI 生成醫美 Threads 貼文內容
+// AI 生成醫美 Threads 貼文內容 — 接上大腦 (Anthropic Claude)
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
-const OPENAI_BASE_URL = Deno.env.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1";
-const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
+const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_MODEL = Deno.env.get("BEAUTY_BOT_MODEL") ?? "claude-haiku-4-5-20251001";
 
 // ── 資料定義 ────────────────────────────────────
 
@@ -67,6 +66,8 @@ function buildSinglePrompt(topic: string, subtopic: string, format: string, tone
 關鍵字：${keywords}
 ${customNotes ? `特別備註：${customNotes}` : ""}
 
+【合規鐵律】輸出不得含：治療/修復/再生/消炎/根治/永久有效/保證/無副作用/100%有效
+
 請生成一篇爆紅 Threads 貼文，輸出 JSON（只輸出 JSON，不要其他說明）：
 {
   "title": "吸睛開頭10-20字",
@@ -81,29 +82,34 @@ ${customNotes ? `特別備註：${customNotes}` : ""}
 }`;
 }
 
-async function callLLM(prompt: string): Promise<string> {
-  const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
+async function callClaude(prompt: string): Promise<string> {
+  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+
+  const res = await fetch(ANTHROPIC_API, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.85,
+      model: ANTHROPIC_MODEL,
       max_tokens: 1500,
+      messages: [{ role: "user", content: prompt }],
     }),
   });
-  if (!res.ok) throw new Error(`LLM API error: ${res.status}`);
+  if (!res.ok) throw new Error(`Claude API error: ${res.status} ${await res.text()}`);
   const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  return data.content?.[0]?.text ?? "";
 }
 
 function parseJSON(raw: string): unknown {
   let cleaned = raw.trim();
   if (cleaned.startsWith("```")) cleaned = cleaned.split("\n").slice(1).join("\n");
   if (cleaned.endsWith("```")) cleaned = cleaned.split("\n").slice(0, -1).join("\n");
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (match) return JSON.parse(match[0]);
   return JSON.parse(cleaned.trim());
 }
 
@@ -121,14 +127,17 @@ function fallbackPost(topic: string, format: string): object {
   };
 }
 
+// ── CORS ────────────────────────────────────────
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, content-type",
+};
+
 // ── 主要處理器 ──────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type" },
-    });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
     const body = await req.json();
@@ -146,18 +155,17 @@ Deno.serve(async (req: Request) => {
       const prompt = buildSinglePrompt(topic, subtopic, format, tone, customNotes);
       let post: unknown;
       try {
-        const raw = await callLLM(prompt);
+        const raw = await callClaude(prompt);
         post = parseJSON(raw);
       } catch {
         post = fallbackPost(topic, format);
       }
 
-      // 確保有 CTA
       const p = post as Record<string, unknown>;
       if (!p.cta) p.cta = pick(CTA_TEMPLATES);
 
       return new Response(JSON.stringify({ post }), {
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        headers: { "Content-Type": "application/json", ...CORS },
       });
     }
 
@@ -175,7 +183,7 @@ Deno.serve(async (req: Request) => {
         const subtopic = pick(topicInfo.subtopics);
         const prompt = buildSinglePrompt(plan.theme, subtopic, plan.format, plan.tone, "");
         try {
-          const raw = await callLLM(prompt);
+          const raw = await callClaude(prompt);
           const p = parseJSON(raw) as Record<string, unknown>;
           if (!p.cta) p.cta = pick(CTA_TEMPLATES);
           const date = new Date(weekStart);
@@ -189,7 +197,7 @@ Deno.serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify({ posts, week_summary: "本週涵蓋7大醫美主題，全面覆蓋用戶興趣。" }),
-        { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } },
+        { headers: { "Content-Type": "application/json", ...CORS } },
       );
     }
 
@@ -204,7 +212,7 @@ Deno.serve(async (req: Request) => {
         const format = POST_FORMATS[i % POST_FORMATS.length];
         const prompt = buildSinglePrompt(topic, subtopic, format, "親切專業", "");
         try {
-          const raw = await callLLM(prompt);
+          const raw = await callClaude(prompt);
           const p = parseJSON(raw) as Record<string, unknown>;
           if (!p.cta) p.cta = pick(CTA_TEMPLATES);
           posts.push(p);
@@ -214,18 +222,18 @@ Deno.serve(async (req: Request) => {
       }
 
       return new Response(JSON.stringify({ posts }), {
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        headers: { "Content-Type": "application/json", ...CORS },
       });
     }
 
     return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
       status: 400,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      headers: { "Content-Type": "application/json", ...CORS },
     });
   } catch (err: unknown) {
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      headers: { "Content-Type": "application/json", ...CORS },
     });
   }
 });
