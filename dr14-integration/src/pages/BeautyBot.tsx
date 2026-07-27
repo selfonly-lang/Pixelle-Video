@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Sparkles, Calendar, Target, TrendingUp, Link2, Settings } from 'lucide-react';
+import { Sparkles, Calendar, Target, TrendingUp, Link2, Settings, Clock } from 'lucide-react';
 
 import { PostGenerator } from '@/components/beauty-bot/PostGenerator';
 import { WeeklyPlan } from '@/components/beauty-bot/WeeklyPlan';
@@ -10,6 +10,7 @@ import { SeriesPosts } from '@/components/beauty-bot/SeriesPosts';
 import { StrategyGuide } from '@/components/beauty-bot/StrategyGuide';
 import { ThreadsConnect } from '@/components/beauty-bot/ThreadsConnect';
 import { BotSettings } from '@/components/beauty-bot/BotSettings';
+import { QueueManager } from '@/components/beauty-bot/QueueManager';
 import { getThreadsAccount } from '@/lib/beauty-bot-api';
 import type { ThreadsAccount } from '@/types/beauty-bot';
 import { WEEKLY_SCHEDULE } from '@/types/beauty-bot';
@@ -36,7 +37,7 @@ export default function BeautyBot() {
             <h1 className="text-2xl font-bold">BeautyBot 醫美發文機器人</h1>
           </div>
           <p className="text-pink-100 text-sm">
-            AI 自動生成高互動率 Threads 貼文 · 增粉導流 · 連結己美 self.com.tw 及 BeVenus 醫美社群
+            AI 自動生成高互動率 Threads 貼文 · 排程佇列自動發文 · 連結己美 self.com.tw 及 BeVenus 醫美社群
           </p>
         </div>
       </div>
@@ -70,8 +71,11 @@ export default function BeautyBot() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="generate" className="space-y-4">
-          <TabsList className="grid grid-cols-6 w-full bg-white border shadow-sm">
+        <Tabs defaultValue="queue" className="space-y-4">
+          <TabsList className="grid grid-cols-7 w-full bg-white border shadow-sm">
+            <TabsTrigger value="queue" className="flex items-center gap-1 text-xs">
+              <Clock className="w-3 h-3" /> 排程佇列
+            </TabsTrigger>
             <TabsTrigger value="generate" className="flex items-center gap-1 text-xs">
               <Sparkles className="w-3 h-3" /> 快速生成
             </TabsTrigger>
@@ -79,19 +83,22 @@ export default function BeautyBot() {
               <Calendar className="w-3 h-3" /> 週計畫
             </TabsTrigger>
             <TabsTrigger value="series" className="flex items-center gap-1 text-xs">
-              <Target className="w-3 h-3" /> 系列貼文
+              <Target className="w-3 h-3" /> 系列
             </TabsTrigger>
             <TabsTrigger value="strategy" className="flex items-center gap-1 text-xs">
-              <TrendingUp className="w-3 h-3" /> 增粉策略
+              <TrendingUp className="w-3 h-3" /> 策略
             </TabsTrigger>
             <TabsTrigger value="threads" className="flex items-center gap-1 text-xs">
-              <Link2 className="w-3 h-3" /> Threads 串接
+              <Link2 className="w-3 h-3" /> 串接
             </TabsTrigger>
             <TabsTrigger value="settings" className="flex items-center gap-1 text-xs">
               <Settings className="w-3 h-3" /> 設定
             </TabsTrigger>
           </TabsList>
 
+          <TabsContent value="queue">
+            <QueueManager />
+          </TabsContent>
           <TabsContent value="generate">
             <PostGenerator account={account} onAccountChange={setAccount} />
           </TabsContent>
@@ -115,7 +122,7 @@ export default function BeautyBot() {
 
       {/* Footer */}
       <footer className="text-center text-xs text-gray-400 py-6">
-        BeautyBot ·{' '}
+        BeautyBot · 自動發文 08:00 · 12:00 · 19:00 CST ·{' '}
         <a href="https://self.com.tw" className="hover:text-purple-500" target="_blank" rel="noreferrer">
           己美 self.com.tw
         </a>{' '}

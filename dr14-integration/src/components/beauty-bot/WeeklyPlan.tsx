@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Calendar, Download, Send } from 'lucide-react';
+import { Loader2, Calendar, Download, Send, CalendarDays } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { generateWeeklyPlan, publishToThreads, formatPostForDisplay } from '@/lib/beauty-bot-api';
+import { generateWeeklyPlan, publishToThreads, autoFillWeek, formatPostForDisplay } from '@/lib/beauty-bot-api';
 import type { ThreadsPost, ThreadsAccount } from '@/types/beauty-bot';
+import type { WeeklyPlanResult } from '@/lib/beauty-bot-api';
 import { WEEKLY_SCHEDULE } from '@/types/beauty-bot';
 import { PostCard } from './PostCard';
 
@@ -14,8 +15,9 @@ interface Props { account: ThreadsAccount | null; }
 const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
 
 export function WeeklyPlan({ account }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [plan, setPlan] = useState<{ posts: ThreadsPost[]; week_summary: string } | null>(null);
+  const [loading, setLoading]         = useState(false);
+  const [queueing, setQueueing]       = useState(false);
+  const [plan, setPlan]               = useState<WeeklyPlanResult | null>(null);
   const [publishingIdx, setPublishingIdx] = useState<number | null>(null);
 
   const weekStart = (() => {
@@ -34,6 +36,22 @@ export function WeeklyPlan({ account }: Props) {
       toast.error(`生成失敗：${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleQueueAll = async () => {
+    setQueueing(true);
+    try {
+      const result = await autoFillWeek(0);
+      if (result.ok) {
+        toast.success(`✅ ${result.queued} 篇已排入自動發文佇列！系統將在最佳時段發出`);
+      } else {
+        toast.error(`排程失敗：${result.error}`);
+      }
+    } catch (e: unknown) {
+      toast.error(`失敗：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setQueueing(false);
     }
   };
 
@@ -60,7 +78,7 @@ export function WeeklyPlan({ account }: Props) {
   const handlePublishOne = async (post: ThreadsPost, idx: number) => {
     setPublishingIdx(idx);
     try {
-      const result = await publishToThreads(post, formatPostForDisplay(post));
+      const result = await publishToThreads(post);
       if (result.success) toast.success(`週${DAY_NAMES[idx]} 發文成功！`);
       else toast.error(`發文失敗：${result.error}`);
     } catch (e: unknown) {
@@ -110,18 +128,34 @@ export function WeeklyPlan({ account }: Props) {
         </CardContent>
       </Card>
 
-      {/* Generate Button */}
-      <Button
-        onClick={handleGenerate}
-        disabled={loading}
-        className="w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white h-12 text-base"
-      >
-        {loading ? (
-          <><Loader2 className="w-5 h-5 mr-2 animate-spin" />生成中（約 30-60 秒）...</>
-        ) : (
-          <>🚀 生成本週 7 篇貼文</>
-        )}
-      </Button>
+      {/* Action buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          onClick={handleGenerate}
+          disabled={loading || queueing}
+          className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white h-12"
+        >
+          {loading ? (
+            <><Loader2 className="w-5 h-5 mr-2 animate-spin" />生成中...</>
+          ) : (
+            <>🚀 生成本週 7 篇貼文</>
+          )}
+        </Button>
+        <Button
+          onClick={handleQueueAll}
+          disabled={queueing || loading}
+          className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white h-12"
+        >
+          {queueing ? (
+            <><Loader2 className="w-5 h-5 mr-2 animate-spin" />排程中...</>
+          ) : (
+            <><CalendarDays className="w-5 h-5 mr-2" />一鍵排入全週佇列</>
+          )}
+        </Button>
+      </div>
+      <p className="text-xs text-gray-400 text-center">
+        「一鍵排入全週佇列」會自動生成並排程，每日 08:00 由系統發出，無需手動操作
+      </p>
 
       {plan && (
         <>
@@ -150,7 +184,7 @@ export function WeeklyPlan({ account }: Props) {
                   >
                     {publishingIdx === i
                       ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />發文中...</>
-                      : <><Send className="w-4 h-4 mr-2" />發布 週{DAY_NAMES[i]} 貼文</>}
+                      : <><Send className="w-4 h-4 mr-2" />立即發布 週{DAY_NAMES[i]} 貼文</>}
                   </Button>
                 )}
               </div>

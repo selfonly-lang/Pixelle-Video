@@ -20,11 +20,11 @@ function adminClient() {
 
 // ── Threads API helpers ──────────────────────────────────
 
-async function getStoredToken(): Promise<{ access_token: string; user_id: string } | null> {
+async function getStoredToken(): Promise<{ access_token: string; user_id: string; username?: string; expires_at?: string } | null> {
   const db = adminClient();
   const { data } = await db
     .from("threads_secrets")
-    .select("access_token, user_id")
+    .select("access_token, user_id, username, expires_at")
     .order("created_at", { ascending: false })
     .limit(1)
     .single();
@@ -293,6 +293,35 @@ Deno.serve(async (req: Request) => {
         .limit(limit);
       if (error) return jsonResponse({ error: error.message }, 500);
       return jsonResponse({ history: data });
+    }
+
+    // ── refresh_token: extend Threads 60-day token ───────
+    if (action === "refresh_token") {
+      const cred = await getStoredToken();
+      if (!cred) return jsonResponse({ ok: false, error: "No token stored" });
+
+      const res = await fetch(
+        `${THREADS_BASE}/refresh_access_token?grant_type=th_refresh_token&access_token=${encodeURIComponent(cred.access_token)}`,
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return jsonResponse({ ok: false, error: err?.error?.message ?? `Refresh failed: ${res.status}` });
+      }
+      const data = await res.json();
+      const newToken: string   = data.access_token;
+      const expiresIn: number  = data.expires_in ?? 5184000;
+      const expiresAt          = new Date(Date.now() + expiresIn * 1000).toISOString();
+
+      const db = adminClient();
+      await db.from("threads_secrets").insert({
+        access_token: newToken,
+        user_id:      cred.user_id,
+        username:     cred.username ?? "",
+        expires_at:   expiresAt,
+        created_at:   new Date().toISOString(),
+      });
+
+      return jsonResponse({ ok: true, expires_at: expiresAt });
     }
 
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);

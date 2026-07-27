@@ -5,10 +5,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Sparkles, Send, Copy, Check } from 'lucide-react';
+import { Loader2, Sparkles, Send, Copy, Check, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { generatePost, publishToThreads, formatPostForDisplay } from '@/lib/beauty-bot-api';
+import { generatePost, publishToThreads, enqueuePost, formatPostForDisplay } from '@/lib/beauty-bot-api';
 import type { ThreadsPost, ThreadsAccount } from '@/types/beauty-bot';
 import { BEAUTY_TOPICS, POST_FORMATS, WEEKLY_SCHEDULE } from '@/types/beauty-bot';
 import { PostCard } from './PostCard';
@@ -26,10 +26,11 @@ export function PostGenerator({ account }: Props) {
   const [format, setFormat] = useState(todayPlan?.format ?? '知識分享');
   const [tone, setTone] = useState(todayPlan?.tone ?? '親切專業');
   const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]     = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [post, setPost] = useState<ThreadsPost | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [enqueueing, setEnqueueing] = useState(false);
+  const [post, setPost]           = useState<ThreadsPost | null>(null);
+  const [copied, setCopied]       = useState(false);
 
   const subtopics = BEAUTY_TOPICS[topic]?.subtopics ?? [];
 
@@ -58,7 +59,7 @@ export function PostGenerator({ account }: Props) {
     if (!post) return;
     setPublishing(true);
     try {
-      const result = await publishToThreads(post, formatPostForDisplay(post));
+      const result = await publishToThreads(post);
       if (result.success) {
         toast.success(`✅ 發文成功！${result.post_id ? `ID: ${result.post_id}` : ''}`);
       } else {
@@ -68,6 +69,23 @@ export function PostGenerator({ account }: Props) {
       toast.error(`發文失敗：${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const handleEnqueue = async () => {
+    if (!post) return;
+    setEnqueueing(true);
+    try {
+      const result = await enqueuePost(post);
+      if (result.ok) {
+        toast.success('✅ 已加入排程佇列！系統將在最近的最佳時段自動發文');
+      } else {
+        toast.error(`加入排程失敗：${result.error}`);
+      }
+    } catch (e: unknown) {
+      toast.error(`加入排程失敗：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setEnqueueing(false);
     }
   };
 
@@ -162,8 +180,20 @@ export function PostGenerator({ account }: Props) {
                 className="resize-none h-48 text-sm bg-gray-50 font-mono"
               />
               <div className="flex gap-2 mt-3">
-                <Button variant="outline" onClick={handleCopy} className="flex-1 border-purple-200 text-purple-700 hover:bg-purple-50">
-                  {copied ? <><Check className="w-4 h-4 mr-2" />已複製</> : <><Copy className="w-4 h-4 mr-2" />複製全文</>}
+                <Button variant="outline" onClick={handleCopy} className="border-purple-200 text-purple-700 hover:bg-purple-50">
+                  {copied ? <><Check className="w-4 h-4 mr-1" />已複製</> : <><Copy className="w-4 h-4 mr-1" />複製</>}
+                </Button>
+                <Button
+                  onClick={handleEnqueue}
+                  disabled={enqueueing}
+                  variant="outline"
+                  className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50"
+                >
+                  {enqueueing ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />排程中...</>
+                  ) : (
+                    <><Clock className="w-4 h-4 mr-2" />加入排程</>
+                  )}
                 </Button>
                 <Button
                   onClick={handlePublish}
@@ -173,13 +203,13 @@ export function PostGenerator({ account }: Props) {
                   {publishing ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" />發文中...</>
                   ) : (
-                    <><Send className="w-4 h-4 mr-2" />🚀 直接發文到 Threads</>
+                    <><Send className="w-4 h-4 mr-2" />立即發文</>
                   )}
                 </Button>
               </div>
               {!account?.connected && (
                 <p className="text-xs text-amber-600 mt-2 text-center">
-                  請先在「🔗 Threads 串接」分頁完成帳號設定
+                  「加入排程」可在未連線時使用；「立即發文」需先連接 Threads 帳號
                 </p>
               )}
             </CardContent>
