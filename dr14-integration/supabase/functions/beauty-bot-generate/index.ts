@@ -176,24 +176,27 @@ Deno.serve(async (req: Request) => {
       const weekStart = new Date(now);
       weekStart.setDate(weekStart.getDate() - (weekStart.getDay() === 0 ? 6 : weekStart.getDay() - 1));
 
-      const posts: unknown[] = [];
-      for (let day = 0; day < 7; day++) {
-        const plan = WEEKLY_SCHEDULE[day];
-        const topicInfo = BEAUTY_TOPICS[plan.theme] ?? { subtopics: [plan.theme], keywords: [] };
-        const subtopic = pick(topicInfo.subtopics);
-        const prompt = buildSinglePrompt(plan.theme, subtopic, plan.format, plan.tone, "");
-        try {
-          const raw = await callClaude(prompt);
-          const p = parseJSON(raw) as Record<string, unknown>;
-          if (!p.cta) p.cta = pick(CTA_TEMPLATES);
+      // Parallel generation — all 7 days at once, ~5s instead of ~35s
+      const posts = await Promise.all(
+        Array.from({ length: 7 }, async (_, day) => {
+          const plan = WEEKLY_SCHEDULE[day];
+          const topicInfo = BEAUTY_TOPICS[plan.theme] ?? { subtopics: [plan.theme], keywords: [] };
+          const subtopic = pick(topicInfo.subtopics);
+          const prompt = buildSinglePrompt(plan.theme, subtopic, plan.format, plan.tone, "");
           const date = new Date(weekStart);
           date.setDate(date.getDate() + day);
-          p.scheduled_date = date.toISOString().slice(0, 10);
-          posts.push(p);
-        } catch {
-          posts.push({ ...fallbackPost(plan.theme, plan.format), scheduled_date: new Date(weekStart.getTime() + day * 86400000).toISOString().slice(0, 10) });
-        }
-      }
+          const scheduled_date = date.toISOString().slice(0, 10);
+          try {
+            const raw = await callClaude(prompt);
+            const p = parseJSON(raw) as Record<string, unknown>;
+            if (!p.cta) p.cta = pick(CTA_TEMPLATES);
+            p.scheduled_date = scheduled_date;
+            return p;
+          } catch {
+            return { ...fallbackPost(plan.theme, plan.format), scheduled_date };
+          }
+        }),
+      );
 
       return new Response(
         JSON.stringify({ posts, week_summary: "本週涵蓋7大醫美主題，全面覆蓋用戶興趣。" }),
