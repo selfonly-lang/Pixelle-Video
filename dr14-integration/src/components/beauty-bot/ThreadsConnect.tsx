@@ -19,12 +19,16 @@ import type { ThreadsAccount, PostHistoryItem } from '@/types/beauty-bot';
 import { useEffect } from 'react';
 
 const APP_ID = '1854440058813609';
-const REDIRECT_URI = 'https://self.com.tw/oauth/callback';
-const OAUTH_URL =
-  `https://threads.net/oauth/authorize?client_id=${APP_ID}` +
-  `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-  `&scope=threads_basic,threads_content_publish,threads_manage_insights` +
-  `&response_type=code&state=beautybot`;
+
+function buildOAuthUrl(): { oauthUrl: string; redirectUri: string } {
+  const redirectUri = (typeof window !== 'undefined' ? window.location.origin : 'https://self.com.tw') + '/oauth/callback';
+  const oauthUrl =
+    `https://threads.net/oauth/authorize?client_id=${APP_ID}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=threads_basic,threads_content_publish,threads_manage_insights` +
+    `&response_type=code&state=beautybot`;
+  return { oauthUrl, redirectUri };
+}
 
 interface Props {
   account: ThreadsAccount | null;
@@ -39,6 +43,7 @@ export function ThreadsConnect({ account, onAccountChange }: Props) {
   );
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<PostHistoryItem[]>([]);
+  const { oauthUrl, redirectUri } = buildOAuthUrl();
 
   useEffect(() => {
     fetchPostHistory(20).then(setHistory).catch(() => {});
@@ -48,7 +53,7 @@ export function ThreadsConnect({ account, onAccountChange }: Props) {
     if (!codeInput.trim()) return;
     setLoading(true);
     try {
-      const result = await exchangeOAuthCode(codeInput.trim());
+      const result = await exchangeOAuthCode(codeInput.trim(), redirectUri);
       if (result.ok) {
         toast.success(`✅ 授權成功！帳號：@${result.username}  Token 有效至：${result.expires_at?.slice(0, 10)}`);
         onAccountChange({ connected: true, username: result.username, user_id: result.user_id, today_count: 0, remaining: 250 });
@@ -142,13 +147,13 @@ export function ThreadsConnect({ account, onAccountChange }: Props) {
           <p className="text-xs text-gray-500">
             點下方按鈕，在瀏覽器中授權你的 Threads 帳號（需已設定 Redirect URI）
           </p>
-          <a href={OAUTH_URL} target="_blank" rel="noreferrer">
+          <a href={oauthUrl} target="_blank" rel="noreferrer">
             <Button className="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white">
               <ExternalLink className="w-4 h-4 mr-2" />🔗 點此授權 Threads 帳號
             </Button>
           </a>
           <p className="text-xs text-gray-400">
-            授權後會跳轉至 self.com.tw/oauth/callback?code=XXXXXX，複製整個網址
+            授權後會跳轉至 {redirectUri}?code=XXXXXX，複製整個網址
           </p>
         </CardContent>
       </Card>

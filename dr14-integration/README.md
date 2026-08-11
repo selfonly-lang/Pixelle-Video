@@ -84,9 +84,11 @@ supabase functions deploy beauty-bot-publish
 
 ```tsx
 import BeautyBot from '@/pages/BeautyBot';
+import OAuthCallback from '@/pages/OAuthCallback';
 
 // 在 routes 陣列中加入：
-{ path: '/beauty-bot', element: <BeautyBot /> }
+{ path: '/beauty-bot', element: <BeautyBot /> },
+{ path: '/oauth/callback', element: <OAuthCallback /> },  // Threads OAuth 自動換碼
 ```
 
 ### 6. 加入側邊選單
@@ -101,9 +103,12 @@ import { Sparkles } from 'lucide-react';
 
 ## Threads OAuth 設定
 
-1. 前往 [Meta for Developers](https://developers.facebook.com/) → 你的 App
-2. 確認 Redirect URI 已加入白名單：`https://self.com.tw/oauth/callback`
-3. 在 BeautyBot → Threads 串接頁面完成三步驟授權
+1. 前往 [Meta for Developers](https://developers.facebook.com/) → 你的 App → Threads → OAuth 設定
+2. 確認 Redirect URI 白名單加入你的部署網址（動態根據部署域名決定）：
+   - 開發：`http://localhost:5173/oauth/callback`
+   - 生產：`https://ops.self.com.tw/oauth/callback`（或你實際部署的域名）
+3. 將 `/oauth/callback` 路由加入 App（見步驟 5）
+4. 授權後 OAuthCallback 頁面會自動換取 Access Token，無需手動複製 Code
 
 ## 相依套件確認
 

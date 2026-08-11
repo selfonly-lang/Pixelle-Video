@@ -113,10 +113,10 @@ export async function saveThreadsToken(
   return invoke('beauty-bot-publish', { action: 'save_token', access_token: token, user_id: userId, username });
 }
 
-export async function exchangeOAuthCode(code: string): Promise<{
+export async function exchangeOAuthCode(code: string, redirectUri?: string): Promise<{
   ok: boolean; username?: string; user_id?: string; expires_at?: string; error?: string;
 }> {
-  return invoke('beauty-bot-publish', { action: 'oauth_exchange', code });
+  return invoke('beauty-bot-publish', { action: 'oauth_exchange', code, ...(redirectUri ? { redirect_uri: redirectUri } : {}) });
 }
 
 // ── Post history ─────────────────────────────────────────────────────────────

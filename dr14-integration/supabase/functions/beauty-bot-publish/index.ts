@@ -10,7 +10,7 @@ const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const APP_ID = Deno.env.get("THREADS_APP_ID") ?? "";
 const APP_SECRET = Deno.env.get("THREADS_APP_SECRET") ?? "";
-const REDIRECT_URI = Deno.env.get("THREADS_REDIRECT_URI") ?? "https://self.com.tw/oauth/callback";
+const DEFAULT_REDIRECT_URI = Deno.env.get("THREADS_REDIRECT_URI") ?? "https://self.com.tw/oauth/callback";
 
 // ── Supabase admin client ────────────────────────────────
 
@@ -78,9 +78,10 @@ async function publishTextToThreads(
   return { success: true, post_id: postId };
 }
 
-async function exchangeCodeForLongToken(code: string): Promise<{
+async function exchangeCodeForLongToken(code: string, redirectUri?: string): Promise<{
   ok: boolean; access_token?: string; user_id?: string; username?: string; expires_at?: string; error?: string;
 }> {
+  const effectiveRedirectUri = redirectUri ?? DEFAULT_REDIRECT_URI;
   // Step 1: short-lived token
   const shortRes = await fetch("https://graph.threads.net/oauth/access_token", {
     method: "POST",
@@ -89,7 +90,7 @@ async function exchangeCodeForLongToken(code: string): Promise<{
       client_id: APP_ID,
       client_secret: APP_SECRET,
       grant_type: "authorization_code",
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: effectiveRedirectUri,
       code: code.includes("code=") ? new URL(code.startsWith("http") ? code : `https://x.com?${code}`).searchParams.get("code") ?? code : code,
     }),
   });
@@ -247,8 +248,9 @@ Deno.serve(async (req: Request) => {
     // ── oauth_exchange: code → long-lived token → save ──
     if (action === "oauth_exchange") {
       const code: string = body.code ?? "";
+      const redirectUri: string | undefined = body.redirect_uri;
       if (!code) return jsonResponse({ ok: false, error: "code required" }, 400);
-      const result = await exchangeCodeForLongToken(code);
+      const result = await exchangeCodeForLongToken(code, redirectUri);
       if (!result.ok) return jsonResponse(result);
 
       // Auto-save to DB
