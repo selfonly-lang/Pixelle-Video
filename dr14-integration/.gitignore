@@ -1,0 +1,3 @@
+# Override root .gitignore for this TypeScript package
+!src/lib/
+!src/lib/**
