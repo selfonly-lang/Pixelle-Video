@@ -19,7 +19,13 @@ const BEAUTY_TOPICS: Record<string, { subtopics: string[]; keywords: string[] }>
   植髮生髮: { subtopics: ["FUE植髮","PRP生長因子","髮際線調整","禿頭改善"], keywords: ["植髮","生髮","髮量","自信再現","頭皮健康"] },
 };
 
-const POST_FORMATS = ["知識分享","Q&A問答","迷思破解","選擇指南","心得分享","限時優惠","季節話題","前後對比"];
+const POST_FORMATS = ["知識分享","Q&A問答","迷思破解","選擇指南","心得分享","限時優惠","季節話題","前後對比","問卷測驗"];
+
+const SURVEY_CTA = "🔎 免費領取變美測驗・加入己美：https://self.com.tw/survey";
+
+function isSurveyFormat(format: string): boolean {
+  return /問卷|測驗|quiz|survey/i.test(format);
+}
 
 const CTA_TEMPLATES = [
   "✨ 想了解更多？來 己美社群 和千位美麗夥伴一起交流！\n👉 https://self.com.tw\n💬 加入 BeVenus：https://m.facebook.com/groups/bevenus",
@@ -162,7 +168,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const p = post as Record<string, unknown>;
-      if (!p.cta) p.cta = pick(CTA_TEMPLATES);
+      if (!p.cta) p.cta = isSurveyFormat(format) ? SURVEY_CTA : pick(CTA_TEMPLATES);
 
       return new Response(JSON.stringify({ post }), {
         headers: { "Content-Type": "application/json", ...CORS },
@@ -189,7 +195,7 @@ Deno.serve(async (req: Request) => {
           try {
             const raw = await callClaude(prompt);
             const p = parseJSON(raw) as Record<string, unknown>;
-            if (!p.cta) p.cta = pick(CTA_TEMPLATES);
+            if (!p.cta) p.cta = isSurveyFormat(plan.format) ? SURVEY_CTA : pick(CTA_TEMPLATES);
             p.scheduled_date = scheduled_date;
             return p;
           } catch {
@@ -217,7 +223,7 @@ Deno.serve(async (req: Request) => {
         try {
           const raw = await callClaude(prompt);
           const p = parseJSON(raw) as Record<string, unknown>;
-          if (!p.cta) p.cta = pick(CTA_TEMPLATES);
+          if (!p.cta) p.cta = isSurveyFormat(format) ? SURVEY_CTA : pick(CTA_TEMPLATES);
           posts.push(p);
         } catch {
           posts.push(fallbackPost(topic, format));
